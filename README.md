@@ -1,4 +1,4 @@
-sematext-metrics-reporter
+sematext-metrics-reporter3
 ====
 
 [Sematext Metrics](http://github.com/sematext/sematext-metrics) reporter for [Codahale Metrics Library](http://metrics.codahale.com/).
@@ -13,6 +13,8 @@ sematext-metrics-reporter
       .withRegistry(metrics)
       .withDurationUnit(TimeUnit.MILLISECONDS)
       .build();
+
+    reporter.start(1, TimeUnit.MINUTES);
 
 ## License
 
