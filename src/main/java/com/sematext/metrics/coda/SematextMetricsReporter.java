@@ -15,197 +15,165 @@
  */
 package com.sematext.metrics.coda;
 
-import com.codahale.metrics.Counter;
-import com.codahale.metrics.Gauge;
-import com.codahale.metrics.Histogram;
-import com.codahale.metrics.Meter;
-import com.codahale.metrics.MetricFilter;
-import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.ScheduledReporter;
-import com.codahale.metrics.Snapshot;
-import com.codahale.metrics.Timer;
 import com.sematext.metrics.client.AggType;
 import com.sematext.metrics.client.SematextClient;
 import com.sematext.metrics.client.StDatapoint;
+import com.yammer.metrics.core.Counter;
+import com.yammer.metrics.core.Gauge;
+import com.yammer.metrics.core.Histogram;
+import com.yammer.metrics.core.Metered;
+import com.yammer.metrics.core.Metric;
+import com.yammer.metrics.core.MetricName;
+import com.yammer.metrics.core.MetricPredicate;
+import com.yammer.metrics.core.MetricProcessor;
+import com.yammer.metrics.core.MetricsRegistry;
+import com.yammer.metrics.core.Summarizable;
+import com.yammer.metrics.core.Timer;
+import com.yammer.metrics.reporting.AbstractPollingReporter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.SortedMap;
-import java.util.concurrent.TimeUnit;
 
 /**
  * <p>Coda Metrics reporter implementation for sending metrics to
  * <a href="http://sematext.com/spm/index.html">Scalable Performance Monitoring</a></p>.
- *
+ * <p/>
  * <p>Usage:</p>
  * <pre>
- *   MetricRegistry metrics = new MetricRegistry();
+ *   MetricsRegistry metrics = new MetricsRegistry();
  *
- *   SematextClient.initialize("[spm-token]");
+ *   SematextClient.initialize("[token]");
  *
  *   SematextMetricsReporter reporter = SematextMetricsReporter.forClient(SematextClient.client())
- *     .withFilter(MetricFilter.ALL)
+ *     .withPredicate(MetricPredicate.ALL)
  *     .withRegistry(metrics)
- *     .withDurationUnit(TimeUnit.MILLISECONDS)
  *     .build();
+ *
+ *    reporter.start(1, TimeUnit.SECONDS);
  * </pre>
  */
-public class SematextMetricsReporter extends ScheduledReporter {
-  private static final String METRICS_REPORTER_NAME = "SematextMetricsReporter";
+public class SematextMetricsReporter extends AbstractPollingReporter implements MetricProcessor<List<StDatapoint>> {
+  private Logger LOG = LoggerFactory.getLogger(SematextMetricsReporter.class);
 
   private SematextClient sematextClient;
+  private MetricPredicate predicate;
 
-  private SematextMetricsReporter(SematextClient sematextClient, MetricRegistry registry, String name,
-                                  MetricFilter filter, TimeUnit rateUnit, TimeUnit durationUnit) {
-    super(registry, name, filter, rateUnit, durationUnit);
-    this.sematextClient = sematextClient;
+  private SematextMetricsReporter(MetricsRegistry registry, MetricPredicate predicate, SematextClient client) {
+    super(registry, "sematext-metrics-reporter");
+    this.sematextClient = client;
+    this.predicate = predicate;
   }
 
   @Override
-  public void report(SortedMap<String, Gauge> gauges, SortedMap<String, Counter> counters,
-      SortedMap<String, Histogram> histograms, SortedMap<String, Meter> meters, SortedMap<String, Timer> timers) {
-
-    final List<StDatapoint> datapoints = new ArrayList<StDatapoint>();
-    for (String timerName : timers.keySet()) {
-      datapoints.addAll(createTimerDatapoints(timerName, timers.get(timerName)));
-    }
-    for (String meterName : meters.keySet()) {
-      datapoints.addAll(createMeterDatapoints(meterName, meters.get(meterName)));
-    }
-    for (String gaugeName : gauges.keySet()) {
-      datapoints.addAll(createGaugeDatapoints(gaugeName, gauges.get(gaugeName)));
-    }
-    for (String histogramName : histograms.keySet()) {
-      datapoints.addAll(createCounterDatapoints(histogramName, histograms.get(histogramName)));
-    }
-    for (String counterName : counters.keySet()) {
-      datapoints.addAll(createCountersDatapoints(counterName, counters.get(counterName)));
+  public void run() {
+    List<StDatapoint> datapoints = new ArrayList<StDatapoint>();
+    for (Map.Entry<String, SortedMap<MetricName, Metric>> metrics : getMetricsRegistry().groupedMetrics(predicate).entrySet()) {
+      for (Map.Entry<MetricName, Metric> metric : metrics.getValue().entrySet()) {
+        try {
+          metric.getValue().processWith(this, metric.getKey(), datapoints);
+        } catch (Exception e) {
+          LOG.error("Error while processing metric.", e);
+        }
+      }
     }
     sematextClient.send(datapoints);
   }
 
-  private String aggregationTypeFilterName(AggType type) {
-    return String.format("agg.type=%s", type.getName());
-  }
-
-  private List<StDatapoint> createCountersDatapoints(String counterName, Counter counter) {
-    StDatapoint avgDatapoint = StDatapoint.name(counterName)
-        .value((double) counter.getCount())
+  @Override
+  public void processMeter(MetricName name, Metered meter, List<StDatapoint> context) throws Exception {
+    StDatapoint sumDatapoint = StDatapoint.name(Utils.formatName(name))
+        .value(meter.meanRate())
         .aggType(AggType.AVG).build();
-    return Arrays.asList(avgDatapoint);
+    context.add(sumDatapoint);
   }
 
-  private List<StDatapoint> createCounterDatapoints(String histogramName, Histogram histogram) {
-    Snapshot snapshot = histogram.getSnapshot();
-    StDatapoint minDatapoint = StDatapoint.name(histogramName)
-        .filter1(aggregationTypeFilterName(AggType.MIN))
-        .value((double) snapshot.getMin())
+  @Override
+  public void processCounter(MetricName name, Counter counter, List<StDatapoint> context) throws Exception {
+    StDatapoint avgDatapoint = StDatapoint.name(Utils.formatName(name))
+        .value((double) counter.count())
+        .aggType(AggType.AVG).build();
+    context.add(avgDatapoint);
+  }
+
+  private void processSummarizable(MetricName name, Summarizable summarizable, List<StDatapoint> context) throws Exception {
+    StDatapoint minDatapoint = StDatapoint.name(Utils.formatName(name))
+        .filter1(Utils.formatFilterName(AggType.MIN))
+        .value(summarizable.min())
         .aggType(AggType.MIN)
         .build();
 
-    StDatapoint maxDatapoint = StDatapoint.name(histogramName)
-        .filter1(aggregationTypeFilterName(AggType.MAX))
-        .value((double) snapshot.getMax())
+    context.add(minDatapoint);
+
+    StDatapoint maxDatapoint = StDatapoint.name(Utils.formatName(name))
+        .filter1(Utils.formatFilterName(AggType.MAX))
+        .value(summarizable.max())
         .aggType(AggType.MAX)
         .build();
 
-    StDatapoint avgDatapoint = StDatapoint.name(histogramName)
-        .filter1(aggregationTypeFilterName(AggType.AVG))
-        .value(snapshot.getMean())
+    context.add(maxDatapoint);
+
+    StDatapoint avgDatapoint = StDatapoint.name(Utils.formatName(name))
+        .filter1(Utils.formatFilterName(AggType.AVG))
+        .value(summarizable.mean())
         .aggType(AggType.AVG)
         .build();
-    return Arrays.asList(minDatapoint, maxDatapoint, avgDatapoint);
+
+    context.add(avgDatapoint);
   }
 
-  private List<StDatapoint> createTimerDatapoints(String timerName, Timer timer) {
-    Snapshot snapshot = timer.getSnapshot();
-    StDatapoint minDatapoint = StDatapoint.name(timerName)
-        .filter1(aggregationTypeFilterName(AggType.MIN))
-        .value(convertDuration(snapshot.getMin()))
-        .aggType(AggType.MIN)
-        .build();
-
-    StDatapoint maxDatapoint = StDatapoint.name(timerName)
-        .filter1(aggregationTypeFilterName(AggType.MAX))
-        .value(convertDuration(snapshot.getMax()))
-        .aggType(AggType.MAX)
-        .build();
-
-    StDatapoint avgDatapoint = StDatapoint.name(timerName)
-        .filter1(aggregationTypeFilterName(AggType.AVG))
-        .value(convertDuration(snapshot.getMean()))
-        .aggType(AggType.AVG)
-        .build();
-    return Arrays.asList(minDatapoint, maxDatapoint, avgDatapoint);
+  @Override
+  public void processHistogram(MetricName name, Histogram histogram, List<StDatapoint> context) throws Exception {
+    processSummarizable(name, histogram, context);
   }
 
-  private List<StDatapoint> createGaugeDatapoints(String gaugeName, Gauge gauge) {
-    Object value = gauge.getValue();
+  @Override
+  public void processTimer(MetricName name, Timer timer, List<StDatapoint> context) throws Exception {
+    processSummarizable(name, timer, context);
+  }
+
+  @Override
+  public void processGauge(MetricName name, Gauge<?> gauge, List<StDatapoint> context) throws Exception {
+    Object value = gauge.value();
     if (value instanceof Number) {
-      StDatapoint avgDatapoint = StDatapoint.name(gaugeName)
+      StDatapoint avgDatapoint = StDatapoint.name(Utils.formatName(name))
           .value(((Number) value).doubleValue())
           .aggType(AggType.AVG).build();
-      return Arrays.asList(avgDatapoint);
+      context.add(avgDatapoint);
     }
-    return Collections.emptyList();
   }
 
-  private List<StDatapoint> createMeterDatapoints(String meterName, Meter meter) {
-    StDatapoint sumDatapoint = StDatapoint.name(meterName)
-        .value(convertRate(meter.getMeanRate()))
-        .aggType(AggType.AVG).build();
-    return Arrays.asList(sumDatapoint);
-  }
-
+  /**
+   * Builder for Sematext Metrics Reporter.
+   */
   public static class Builder {
-    private MetricRegistry registry;
-    private MetricFilter filter = MetricFilter.ALL;
-    private TimeUnit rateUnit = TimeUnit.SECONDS;
-    private TimeUnit durationUnit = TimeUnit.MILLISECONDS;
-    private SematextClient sematextClient;
+    private SematextClient client;
+    private MetricPredicate predicate;
+    private MetricsRegistry registry;
 
-    private Builder(SematextClient sematextClient) {
-      this.sematextClient = sematextClient;
+    private Builder(SematextClient client) {
+      this.client = client;
     }
 
     /**
-     * Use metrics filter.
-     * @param filter filter
+     * Set predicate to filter metrics.
+     * @param predicate predicate
      * @return builder
      */
-    public Builder withFilter(MetricFilter filter) {
-      this.filter = filter;
+    public Builder withPredicate(MetricPredicate predicate) {
+      this.predicate = predicate;
       return this;
     }
 
     /**
-     * Set rate unit to be used for sent metrics.
-     * @param rateUnit rate unit
-     * @return builder
-     */
-    public Builder withRateUnit(TimeUnit rateUnit) {
-      this.rateUnit = rateUnit;
-      return this;
-    }
-
-    /**
-     * Set duration unit to be used for sent metrics.
-     * @param durationUnit duration unit
-     * @return builder
-     */
-    public Builder withDurationUnit(TimeUnit durationUnit) {
-      this.durationUnit = durationUnit;
-      return this;
-    }
-
-    /**
-     * Set registry.
+     * Use given registry.
      * @param registry registry
      * @return registry
      */
-    public Builder withRegistry(MetricRegistry registry) {
+    public Builder withRegistry(MetricsRegistry registry) {
       this.registry = registry;
       return this;
     }
@@ -213,35 +181,28 @@ public class SematextMetricsReporter extends ScheduledReporter {
     /**
      * Build reporter.
      * @return reporter
-     * @throws IllegalArgumentException if {@code registry}, {@code filter}, {@code durationUnit} or
-     * {@code rateUnit} is {@code null}.
+     * @throws IllegalArgumentException if {@code predicate} or {@code registry} is {@code null}.
      */
     public SematextMetricsReporter build() {
+      if (predicate == null) {
+        throw new IllegalArgumentException("Predicate should be defined.");
+      }
       if (registry == null) {
         throw new IllegalArgumentException("Registry should be defined.");
       }
-      if (filter == null) {
-        throw new IllegalArgumentException("Filter should be defined.");
-      }
-      if (durationUnit == null) {
-        throw new IllegalArgumentException("Duration unit should be defined.");
-      }
-      if (rateUnit == null) {
-        throw new IllegalArgumentException("Rate unit should be defined.");
-      }
-      return new SematextMetricsReporter(sematextClient,
-          registry, METRICS_REPORTER_NAME, filter, rateUnit, durationUnit);
+      return new SematextMetricsReporter(registry, predicate, client);
     }
   }
 
   /**
-   * Create building for {@link SematextMetricsReporter}.
-   * @param client client instance
+   * Create builder for client.
+   * @param client client
    * @return builder
+   * @throws IllegalArgumentException if {@code client} is {@code null}.
    */
   public static Builder forClient(SematextClient client) {
     if (client == null) {
-      throw new IllegalArgumentException("Client should be defined");
+      throw new IllegalArgumentException("Client should be defined.");
     }
     return new Builder(client);
   }

@@ -8,11 +8,13 @@ sematext-metrics-reporter
     MetricRegistry metrics = new MetricRegistry();
 
     SematextClient.initialize("[spm-token]");
+
     SematextMetricsReporter reporter = SematextMetricsReporter.forClient(SematextClient.client())
-      .withFilter(MetricFilter.ALL)
-      .withRegistry(metrics)
-      .withDurationUnit(TimeUnit.MILLISECONDS)
-      .build();
+        .withPredicate(MetricPredicate.ALL)
+        .withRegistry(metrics)
+        .build();
+
+    reporter.start(5, TimeUnit.MINUTES);
 
 ## License
 
