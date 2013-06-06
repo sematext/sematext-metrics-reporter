@@ -1,7 +1,7 @@
 sematext-metrics-reporter
 ====
 
-Coda Hale Metrics(http://metrics.codahale.com/) Reporter that uses [Sematext Metrics](http://github.com/sematext/sematext-metrics) to send metrics to [SPM](http://sematext.com/spm/index.html)
+[Coda Hale Metrics](http://metrics.codahale.com/) Reporter that uses [Sematext Metrics](http://github.com/sematext/sematext-metrics) to send metrics to [SPM](http://sematext.com/spm/index.html)
 
 ## Usage
 
