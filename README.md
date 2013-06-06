@@ -1,4 +1,4 @@
-sematext-metrics-reporter3
+sematext-metrics-reporter
 ====
 
 [Sematext Metrics](http://github.com/sematext/sematext-metrics) reporter for [Codahale Metrics Library](http://metrics.codahale.com/).
