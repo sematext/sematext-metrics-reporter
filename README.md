@@ -1,7 +1,7 @@
 sematext-metrics-reporter[![Build Status](https://travis-ci.org/sematext/sematext-metrics-reporter.png?branch=master)](https://travis-ci.org/sematext/sematext-metrics-reporter)
 ====
 
-[Coda Hale Metrics](http://metrics.codahale.com/) Reporter that uses [Sematext Metrics](http://github.com/sematext/sematext-metrics) library to send metrics to [SPM](http://sematext.com/spm/index.html).
+[Coda Hale Metrics](http://metrics.codahale.com/) Reporter that uses [Sematext Metrics](http://github.com/sematext/sematext-metrics) library to send metrics to [SPM](http://sematext.com/spm/index.html) as [Custom Metrics](https://sematext.atlassian.net/wiki/display/PUBSPM/Custom+Metrics)
 
 ## Usage
 Add maven dependency:
