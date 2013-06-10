@@ -1,9 +1,19 @@
-sematext-metrics-reporter
+sematext-metrics-reporter[![Build Status](https://travis-ci.org/sematext/sematext-metrics-reporter.png?branch=metrics-2.2.0)](https://travis-ci.org/sematext/sematext-metrics-reporter)
 ====
 
-[Sematext Metrics](http://github.com/sematext/sematext-metrics) reporter for [Codahale Metrics Library](http://metrics.codahale.com/).
+[Coda Hale Metrics](http://metrics.codahale.com/) Reporter that uses [Sematext Metrics](http://github.com/sematext/sematext-metrics) library to send metrics to [SPM](http://sematext.com/spm/index.html).
 
 ## Usage
+Add maven dependency:
+
+    <dependency>
+      <groupId>com.sematext</groupId>
+      <artifactId>sematext-metrics-reporter</artifactId>
+      <version>0.1.2.2.0</version>
+    </dependency>
+
+
+And configure reporter:
 
     MetricRegistry metrics = new MetricRegistry();
 
