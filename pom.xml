@@ -3,7 +3,7 @@
   <groupId>com.sematext</groupId>
   <artifactId>sematext-metrics-reporter</artifactId>
   <packaging>jar</packaging>
-  <version>0.2.3.0.0-SNAPSHOT</version>
+  <version>0.2-3.0.0-SNAPSHOT</version>
   <name>sematext-metrics-reporter</name>
   <url>https://github.com/sematext/sematext-metrics-reporter</url>
 
